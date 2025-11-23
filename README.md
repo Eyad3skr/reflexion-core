@@ -1,8 +1,10 @@
-# Reflexion Engine (Rust) — Architecture, Phases & Project Plan
+# Reflexion Engine (Rust) - Architecture, Phases & Project Plan
 
-This document describes the **Rust Reflexion Engine** that will become the core structural conformance checker under **SpecScript** (Architecture-as-Code).
+### *Core Structural Conformance Engine for SpecScript (Architecture-as-Code)*
 
-The engine is heavily inspired by Prof. Koschke's original Reflexion Model but modernized, made incremental, and designed for full integration with SpecScript.
+This document describes the **Rust Reflexion Engine**, the backend structural conformance checker that powers **SpecScript**, the Architecture-as-Code language.
+
+The engine is inspired by Prof. Rainer Koschke's *Incremental Reflexion Analysis* but modernized and designed for full automation, Contract-based architecture checking, IDE/CI integration, and SpecScript compilation support.
 
 ---
 
@@ -24,14 +26,14 @@ src/
     json_loader.rs
     json_writer.rs
     normalize.rs        # JSON → ReflexionGraph
-    ardsl_loader.rs     # .ardsl compiler input
+    specscript_loader.rs  # SpecScript compiler input
 
-  ardsl/
-    parser.rs           # lexer/parser for DSL
-    model.rs            # DSL AST
-    compiler.rs         # AST → JSON IR
-    patterns.rs         # style/pattern rules
-    policies.rs         # optional/forbidden/etc.
+  specscript/
+    parser.rs           # lexer/parser for the SpecScript DSL
+    model.rs            # DSL AST (SystemSpec)
+    compiler.rs         # AST → JSON IR (Architecture + MappingRules + Contracts)
+    patterns.rs         # style/pattern rules → dependency constraints
+    policies.rs         # optional/must_exist/forbidden/severity constraints
 
   cli/
     main.rs
@@ -42,9 +44,7 @@ tests/
   simple_layered.rs
   mismatch_examples.rs
   incremental.rs
-
 ```
-
 
 ---
 
@@ -53,23 +53,23 @@ tests/
 ### Phase 0 — In-Memory Engine (Now)
 
 **Goal:**
-- Build the **ReflexionGraph** data model
-- Implement **run_from_scratch**, propagation, and lifting
-- Hardcode a simple architecture + implementation + mapping
-- Pass a small end-to-end test
+- Build the `ReflexionGraph`
+- Implement propagation + lifting + classification
+- Hardcode a simple architecture + implementation
+- Pass a basic test end-to-end
 
 **Deliverables:**
-- `model.rs`
-- `engine.rs`
+- `graph.rs`, `propagate.rs`, `lifting.rs`, `classify.rs`
 - `tests/basic.rs`
 
 ---
 
 ### Phase 1 — IR JSON Formats
 
-Define simple JSON formats for:
+Define JSON for the engine:
 
 #### Architecture Model
+
 ```json
 {
   "nodes": [{ "id": 1, "name": "UI", "parent": null }],
@@ -78,6 +78,7 @@ Define simple JSON formats for:
 ```
 
 #### Implementation Facts
+
 ```json
 {
   "nodes": [{ "id": 10, "name": "LoginPage", "path": "src/ui/login.rs" }],
@@ -86,6 +87,7 @@ Define simple JSON formats for:
 ```
 
 #### Mapping Table
+
 ```json
 {
   "maps_to": [
@@ -95,140 +97,137 @@ Define simple JSON formats for:
 }
 ```
 
-Matching serde structs will be added in `io.rs`.
+Serde structs will be defined in `io/json_loader.rs`.
 
 ---
 
-### Phase 2 — Normalizer (JSON → Graph)
+### Phase 2 — Normalizer (JSON → ReflexionGraph)
 
-Add a module:
-```
-src/normalizer.rs
-```
+Implement:
 
-That performs:
 ```
-ArchitectureModel + ImplementationFacts + MappingTable
+ArchitectureModel + ImplementationFacts + MappingRules
         ↓
-   ReflexionGraph (ready to run)
+    ReflexionGraph
 ```
 
-This is core for CLI and ArDSL integration.
+This prepares the internal graph representation for the core engine.
 
 ---
 
 ### Phase 3 — Hierarchy-Aware Lifting
 
-Upgrade lifting:
-- Walk parent components
-- Support `AllowedAbsent`, `ImplicitlyAllowed`
-- Handle optional edges vs mandatory edges
-
-This completes a real reflexion engine.
+- Walk parent/ancestor nodes during lifting
+- Add `AllowedAbsent`, `ImplicitlyAllowed`
+- Handle optional & must_exist edges
+- Apply pattern/policy constraints
 
 ---
 
 ### Phase 4 — Incremental API
 
-Add:
-```
-add_impl_edge
-remove_impl_edge
-remap_impl_node
+Expose:
+
+```rust
+add_impl_edge()
+remove_impl_edge()
+remap_impl_node()
 ```
 
-So editors, file watchers, or CI can use the engine dynamically.
+So editors (LSP), CI watchers, and SEE can update results in real time.
 
 ---
 
-### Phase 5 — Contract Attributes (ArDSL Integration)
+### Phase 5 — Contract Attributes (SpecScript Integration)
 
-Architecture edges/nodes gain attributes:
+Architecture edges and nodes can declare:
 - `optional`
 - `must_exist`
 - `forbidden`
 - `ghost`
 - `severity` (warning/error)
 
-Engine classifies violations accordingly.
+The engine classifies violations using these constraints.
 
 ---
 
-### Phase 6 — Mapping Rules
+### Phase 6 — Mapping Rules (from SpecScript)
 
-Stop using `mapping.json`.  
-ArDSL compiler emits `mapping_rules.json`.
+SpecScript compiler emits:
 
-You add:
+```
+mapping_rules.json
+```
+
+Core engine adds:
+
 ```rust
-apply_mapping_rules(&ImplementationFacts, &MappingRules) -> HashMap<impl, arch>
+apply_mapping_rules(&ImplementationFacts, &MappingRules)
+    -> HashMap<impl_node, arch_node>
 ```
+
+Stops relying on `mapping.json`.
 
 ---
 
-### Phase 7 — CLI & Tooling
+### Phase 7 — CLI Tooling
 
-Add new crate `reflexion-cli`:
+Binary name example:
+
+```bash
+specscript-reflect --spec system.specscript --impl impl.json --out result.json
 ```
-ardsl-reflect --arch arch.json --impl impl.json --rules mapping_rules.json --out result.json
-```
+
+CLI performs:
+1. Parse `.specscript`
+2. Compile to IR
+3. Load implementation facts
+4. Normalize to ReflexionGraph
+5. Run reflexion
+6. Print violations or export JSON
 
 ---
 
 ### Phase 8 — IDE & CI Integration
 
-Expose the engine as:
-- JSON report API
+Expose:
+- JSON reports
 - Watch mode
-- Language Server hooks
-- GitHub Action for PR checks
+- LSP hooks for editors
+- GitHub Action integration
+- (optional) SEE integration (visual frontend)
+
+This enables continuous conformance checking with zero manual effort.
 
 ---
 
-## 3. Phase 0 Code Summary (Core Engine)
+## 3. Phase 0 Code Summary
 
-**Files:**
-- `model.rs`
-- `engine.rs`
-- `tests/basic.rs`
+### The minimal working engine includes:
 
-**Contains:**
-- `Node`, `Edge`, `ReflexionGraph`
-- `run_from_scratch`
-- `propagate_and_lift`
-- `lift_exact`
-- Propagation table
-- Initial classification: `Convergent`, `Allowed`, `Divergent`, `Absent`
+- Node/Edge definitions
+- ReflexionGraph struct
+- `run_from_scratch()`
+- Propagation: impl edge → propagated arch edge
+- Lifting: propagated → specified architecture edge
+- Final classification:
+  - Convergent
+  - Allowed
+  - Divergent
+  - Absent
 
-This is the minimum skeleton needed before adding JSON, CLI, or mapping rules.
-
----
-
-## 4. Future Fit With ArDSL
-
-```
-ArDSL → .ardsl
-    ↓
-ArDSL Compiler → arch.json + mapping_rules.json
-    ↓
-Normalizer → ReflexionGraph
-    ↓
--> Reflexion Engine → classification result
-    ↓
-ArDSL Contract System → warnings/errors
-    ↓
-ArDSL Generator → code scaffold / regeneration
-    ↓
-IDE/CI integration
-```
+This forms the foundation before JSON, CLI, or SpecScript support.
 
 ---
 
-## 5. Summary
+## 4. End-to-End SpecScript + Engine Pipeline
 
-This engine becomes:
-- The backbone of ArDSL's structural conformance
-- Fully incremental
-- Fully contract-aware
-- Fast (Rust)
-- Capable of replacing old mapping (`.gxl`, manual models) with modern mapping rules and architecture-as-code workflows
+The full SpecScript + Reflexion Engine pipeline works as follows:
+
+An architect writes a `.specscript` specification describing the intended architecture (layers, services, datastores, allowed and forbidden dependencies, styles, mapping rules, and data-access policies). The SpecScript parser converts this into a `SystemSpec` AST, and the SpecScript compiler turns that AST into engine-ready JSON IR consisting of `ArchitectureModel`, `MappingRules`, and `ContractSet`. 
+
+In parallel, language-specific extractors analyze the actual codebase and produce `ImplementationFacts` (implementation nodes and dependency edges). The normalizer merges these two inputs—architecture IR and implementation facts—into a `ReflexionGraph`, applying mapping rules to associate code elements with their architectural roles. 
+
+The core Reflexion Engine then initializes edge states, propagates implementation edges into the architectural space, lifts them against declared architecture edges, and classifies every edge as Convergent, Divergent, Allowed, Absent, AllowedAbsent, ImplicitlyAllowed, or Unmapped, taking into account SpecScript contracts such as forbidden, optional, must-exist edges, and style rules. 
+
+Finally, the CLI or API outputs structured conformance reports and diagnostics in JSON or terminal form for CI pipelines, editors, SEE integration, and architecture dashboards, enabling continuous structural validation and incremental drift detection across the entire system.
