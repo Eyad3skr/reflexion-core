@@ -1,226 +1,45 @@
-# Reflexion Engine (Rust) - Architecture, Phases & Project Plan
+# SpecScript — Executable Architecture Contracts
 
-### *Core Structural Conformance Engine for SpecScript (Architecture-as-Code)*
+SpecScript is a declarative DSL and analysis engine for enforcing
+software architecture rules directly against your codebase. Inspired
+by Reflexion Models (Murphy & Notkin), SpecScript turns architecture
+into an executable artifact with deterministic, explainable conformance
+results.
 
-This document describes the **Rust Reflexion Engine**, the backend structural conformance checker that powers **SpecScript**, the Architecture-as-Code language.
+## Why SpecScript?
 
-The engine is inspired by Prof. Rainer Koschke's *Incremental Reflexion Analysis* but modernized and designed for full automation, Contract-based architecture checking, IDE/CI integration, and SpecScript compilation support.
+• Keep architecture and code in sync  
+• Detect forbidden dependencies  
+• Define components, layers, and contracts in a clear DSL  
+• Prevent drift in microservice and monorepo environments  
+• Map source code to architecture explicitly or using profiles  
+• Integrates with CI/CD to enforce rules continuously  
 
----
+## Example
 
-## 1. Repository Structure
+```specscript
+system "ProLancer" {
+  structure {
+    layer Application {
+      component TaskService
+      component ProjectService
+    }
+    layer Infrastructure {
+      component DBAdapter
+    }
+  }
 
-```
-src/
-  core/
-    graph.rs            # nodes, edges, IR
-    classify.rs         # classification logic
-    delta.rs            # incremental diffs
-    lifting.rs          # lifting/hierarchy logic
-    propagate.rs        # propagation logic
-    mapping.rs          # maps_to + rule-based mapping
-    state.rs            # Convergent, Divergent, etc.
-    types.rs            # enums + shared types
+  contracts {
+    forbid Application -> Infrastructure
+  }
 
-  io/
-    json_loader.rs
-    json_writer.rs
-    normalize.rs        # JSON → ReflexionGraph
-    specscript_loader.rs  # SpecScript compiler input
-
-  specscript/
-    parser.rs           # lexer/parser for the SpecScript DSL
-    model.rs            # DSL AST (SystemSpec)
-    compiler.rs         # AST → JSON IR (Architecture + MappingRules + Contracts)
-    patterns.rs         # style/pattern rules → dependency constraints
-    policies.rs         # optional/must_exist/forbidden/severity constraints
-
-  cli/
-    main.rs
-    commands.rs         # support multiple commands
-    args.rs
-
-tests/
-  simple_layered.rs
-  mismatch_examples.rs
-  incremental.rs
-```
-
----
-
-## 2. Phase Breakdown
-
-### Phase 0 - In-Memory Engine (Now)
-
-**Goal:**
-- Build the `ReflexionGraph`
-- Implement propagation + lifting + classification
-- Hardcode a simple architecture + implementation
-- Pass a basic test end-to-end
-
-**Deliverables:**
-- `graph.rs`, `propagate.rs`, `lifting.rs`, `classify.rs`
-- `tests/basic.rs`
-
----
-
-### Phase 1 - IR JSON Formats
-
-Define JSON for the engine:
-
-#### Architecture Model
-
-```json
-{
-  "nodes": [{ "id": 1, "name": "UI", "parent": null }],
-  "edges": [{ "id": 100, "from": 1, "to": 2, "kind": "Calls" }]
+  mapping {
+    "src/app/**" -> Application
+    "src/infra/**" -> Infrastructure
+  }
 }
 ```
-
-#### Implementation Facts
-
-```json
-{
-  "nodes": [{ "id": 10, "name": "LoginPage", "path": "src/ui/login.rs" }],
-  "edges": [{ "id": 200, "from": 10, "to": 11, "kind": "Calls" }]
-}
-```
-
-#### Mapping Table
-
-```json
-{
-  "maps_to": [
-    { "impl": 10, "arch": 1 },
-    { "impl": 11, "arch": 2 }
-  ]
-}
-```
-
-Serde structs will be defined in `io/json_loader.rs`.
-
----
-
-### Phase 2 - Normalizer (JSON → ReflexionGraph)
-
-Implement:
-
-```
-ArchitectureModel + ImplementationFacts + MappingRules
-        ↓
-    ReflexionGraph
-```
-
-This prepares the internal graph representation for the core engine.
-
----
-
-### Phase 3 - Hierarchy-Aware Lifting
-
-- Walk parent/ancestor nodes during lifting
-- Add `AllowedAbsent`, `ImplicitlyAllowed`
-- Handle optional & must_exist edges
-- Apply pattern/policy constraints
-
----
-
-### Phase 4 - Incremental API
-
-Expose:
-
-```rust
-add_impl_edge()
-remove_impl_edge()
-remap_impl_node()
-```
-
-So editors (LSP), CI watchers, and SEE can update results in real time.
-
----
-
-### Phase 5 - Contract Attributes (SpecScript Integration)
-
-Architecture edges and nodes can declare:
-- `optional`
-- `must_exist`
-- `forbidden`
-- `ghost`
-- `severity` (warning/error)
-
-The engine classifies violations using these constraints.
-
----
-
-### Phase 6 - Mapping Rules (from SpecScript)
-
-SpecScript compiler emits:
-
-```
-mapping_rules.json
-```
-
-Core engine adds:
-
-```rust
-apply_mapping_rules(&ImplementationFacts, &MappingRules)
-    -> HashMap<impl_node, arch_node>
-```
-
-Stops relying on `mapping.json`.
-
----
-
-### Phase 7 - CLI Tooling
-
-Binary name example:
-
-```bash
-specscript-reflect --spec system.specscript --impl impl.json --out result.json
-```
-
-CLI performs:
-1. Parse `.specscript`
-2. Compile to IR
-3. Load implementation facts
-4. Normalize to ReflexionGraph
-5. Run reflexion
-6. Print violations or export JSON
-
----
-
-### Phase 8 - IDE & CI Integration
-
-Expose:
-- JSON reports
-- Watch mode
-- LSP hooks for editors
-- GitHub Action integration
-- (optional) SEE integration (visual frontend)
-
-This enables continuous conformance checking with zero manual effort.
-
----
-
-## 3. Phase 0 Code Summary
-
-### The minimal working engine includes:
-
-- Node/Edge definitions
-- ReflexionGraph struct
-- `run_from_scratch()`
-- Propagation: impl edge → propagated arch edge
-- Lifting: propagated → specified architecture edge
-- Final classification:
-  - Convergent
-  - Allowed
-  - Divergent
-  - Absent
-
-This forms the foundation before JSON, CLI, or SpecScript support.
-
----
-
-## 4. End-to-End SpecScript + Engine Pipeline
+## End-to-End SpecScript + Engine Pipeline
 
 The full SpecScript + Reflexion Engine pipeline works as follows:
 
